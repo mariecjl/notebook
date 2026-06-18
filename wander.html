@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WANDER — a map of the rabbit hole</title>
+<style>
+  :root{
+    --space:#05060e; --space2:#0a0c1c;
+    --ink:#e9edff; --dim:#8b95c8; --faint:#525d92; --hair:rgba(130,160,255,0.14);
+    --gold:#ffd27a; --warm:#ff9e6b; --cool:#6fb4ff; --edge:rgba(150,180,255,0.35);
+    --panel:rgba(10,13,30,0.78);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:var(--space);color:var(--ink);
+    font-family:'Spectral','Iowan Old Style',Georgia,serif;}
+  #stars-bg{position:fixed;inset:0;z-index:0}
+  canvas#graph{position:fixed;inset:0;z-index:1;display:block;cursor:grab}
+  canvas#graph.drag{cursor:grabbing}
+
+  .ui{position:fixed;z-index:5}
+  .panel{background:var(--panel);border:1px solid var(--hair);border-radius:14px;
+    backdrop-filter:blur(12px);box-shadow:0 10px 50px rgba(0,0,0,0.55)}
+
+  /* ---- launch screen ---- */
+  #launch{inset:0;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 42%, #10142e 0%, #05060e 75%);transition:opacity .7s}
+  #launch.gone{opacity:0;pointer-events:none}
+  .launch-card{text-align:center;max-width:560px;padding:40px}
+  .eyebrow{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.5em;
+    text-transform:uppercase;color:var(--gold);margin-bottom:22px;opacity:0.85}
+  .launch-card h1{font-size:62px;font-weight:500;letter-spacing:-0.01em;line-height:0.95;margin-bottom:14px;
+    background:linear-gradient(120deg,#fff,#ffd27a 60%,#6fb4ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .launch-card .lede{font-size:17px;color:var(--dim);line-height:1.55;margin-bottom:34px;font-style:italic}
+  .searchbox{display:flex;gap:0;border:1px solid var(--hair);border-radius:12px;overflow:hidden;
+    background:rgba(0,0,0,0.3);position:relative}
+  .searchbox input{flex:1;background:transparent;border:none;color:var(--ink);font-family:inherit;
+    font-size:18px;padding:16px 18px;outline:none}
+  .searchbox input::placeholder{color:var(--faint)}
+  .searchbox button{background:linear-gradient(180deg,#ffd27a,#e0a23f);color:#1a1405;border:none;
+    padding:0 26px;font-family:ui-monospace,monospace;font-size:13px;letter-spacing:0.12em;
+    text-transform:uppercase;cursor:pointer;font-weight:600;transition:filter .15s}
+  .searchbox button:hover{filter:brightness(1.1)}
+  #suggest{position:absolute;top:calc(100% + 6px);left:0;right:0;border-radius:10px;overflow:hidden;
+    text-align:left;display:none;z-index:6}
+  #suggest.show{display:block}
+  #suggest .s{padding:11px 16px;font-size:15px;color:var(--dim);cursor:pointer;border-bottom:1px solid var(--hair)}
+  #suggest .s:last-child{border-bottom:none}
+  #suggest .s:hover,#suggest .s.act{background:rgba(255,210,122,0.1);color:var(--ink)}
+  .seeds{margin-top:26px;font-size:13px;color:var(--faint);font-family:ui-monospace,monospace}
+  .seeds span{color:var(--cool);cursor:pointer;border-bottom:1px dotted transparent;transition:border .15s}
+  .seeds span:hover{border-bottom-color:var(--cool)}
+
+  /* ---- header ---- */
+  #header{top:18px;left:20px;padding:12px 18px;display:flex;align-items:center;gap:14px}
+  #header .mark{font-family:ui-monospace,monospace;font-size:12px;letter-spacing:0.42em;
+    text-transform:uppercase;color:var(--gold)}
+  #header .origin{font-size:15px;color:var(--dim);font-style:italic;max-width:240px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #header .origin b{color:var(--ink);font-style:normal}
+
+  /* ---- controls ---- */
+  #controls{top:18px;right:20px;padding:11px 13px;display:flex;flex-direction:column;gap:9px;width:200px}
+  .ctl-row{display:flex;gap:7px;align-items:center}
+  .ctl-lbl{font-family:ui-monospace,monospace;font-size:9px;letter-spacing:0.2em;
+    text-transform:uppercase;color:var(--faint);flex:1}
+  button.tg{font-family:ui-monospace,monospace;background:rgba(111,180,255,0.07);color:var(--dim);
+    border:1px solid var(--hair);border-radius:7px;padding:6px 10px;font-size:10.5px;letter-spacing:0.08em;
+    cursor:pointer;transition:all .15s;text-transform:uppercase}
+  button.tg:hover{color:var(--ink);border-color:rgba(130,160,255,0.4)}
+  button.tg.on{background:rgba(255,210,122,0.14);color:var(--gold);border-color:rgba(255,210,122,0.45)}
+  button.tg:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  .ctl-full{width:100%}
+
+  /* ---- detail card ---- */
+  #detail{bottom:20px;left:20px;width:340px;padding:0;overflow:hidden;display:none}
+  #detail.show{display:block}
+  #detail .thumb{width:100%;height:130px;object-fit:cover;display:block;background:#10142e;border-bottom:1px solid var(--hair)}
+  #detail .body{padding:15px 18px 17px}
+  #detail .dtitle{font-size:21px;font-weight:500;margin-bottom:4px;line-height:1.15}
+  #detail .dmeta{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:0.12em;
+    text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+  #detail .dext{font-size:13.5px;color:var(--dim);line-height:1.55;max-height:120px;overflow:auto}
+  #detail .dact{display:flex;gap:8px;margin-top:14px}
+  #detail .dact button{flex:1}
+  #detail .dact a{flex:1;text-decoration:none}
+
+  /* ---- stats ribbon ---- */
+  #ribbon{bottom:20px;right:20px;padding:10px 16px;display:flex;gap:22px;font-family:ui-monospace,monospace}
+  #ribbon .r .n{font-size:18px;color:var(--ink)}
+  #ribbon .r .c{font-size:8.5px;letter-spacing:0.18em;text-transform:uppercase;color:var(--faint);margin-top:2px}
+
+  /* ---- node hover tooltip ---- */
+  #tip{position:fixed;z-index:7;pointer-events:none;padding:6px 11px;border-radius:8px;
+    background:rgba(8,10,24,0.92);border:1px solid var(--hair);font-size:13px;color:var(--ink);
+    display:none;max-width:240px;font-style:italic}
+  #tip.show{display:block}
+
+  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:8;
+    font-family:ui-monospace,monospace;font-size:12px;letter-spacing:0.1em;color:var(--faint);
+    background:var(--panel);border:1px solid var(--hair);border-radius:20px;padding:8px 18px;
+    opacity:0;transition:opacity .4s;pointer-events:none}
+  .toast.show{opacity:1}
+  .hint{position:fixed;bottom:92px;left:50%;transform:translateX(-50%);z-index:5;
+    font-family:ui-monospace,monospace;font-size:11px;letter-spacing:0.14em;color:var(--faint);
+    pointer-events:none;transition:opacity .6s;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="stars-bg"></canvas>
+<canvas id="graph"></canvas>
+
+<!-- launch -->
+<div class="ui" id="launch">
+  <div class="launch-card">
+    <div class="eyebrow">Wikipedia · live</div>
+    <h1>Wander</h1>
+    <div class="lede">Pick one article. Watch where curiosity could take you bloom outward — a constellation of everything it connects to.</div>
+    <div class="searchbox">
+      <input id="q" type="text" placeholder="Start somewhere… e.g. Octopus, Bauhaus, Black hole" autocomplete="off" spellcheck="false">
+      <button id="go">Open</button>
+      <div class="panel" id="suggest"></div>
+    </div>
+    <div class="seeds">or fall in from:
+      <span data-seed="Octopus">Octopus</span> ·
+      <span data-seed="Surrealism">Surrealism</span> ·
+      <span data-seed="Black hole">Black hole</span> ·
+      <span data-seed="Silk Road">Silk Road</span> ·
+      <span data-seed="Fermentation">Fermentation</span>
+    </div>
+  </div>
+</div>
+
+<!-- in-graph UI -->
+<div class="ui panel" id="header" style="display:none">
+  <span class="mark">Wander</span>
+  <span class="origin" id="originLbl"></span>
+</div>
+
+<div class="ui panel" id="controls" style="display:none">
+  <div class="ctl-row"><span class="ctl-lbl">Auto-bloom</span>
+    <button class="tg" id="bloomBtn">Off</button></div>
+  <div class="ctl-row"><span class="ctl-lbl">Labels</span>
+    <button class="tg on" id="labelBtn">Show</button></div>
+  <button class="tg ctl-full" id="recenter">Recenter view</button>
+  <button class="tg ctl-full" id="restart">New rabbit hole</button>
+</div>
+
+<div class="ui panel" id="detail">
+  <img class="thumb" id="dThumb" alt="" style="display:none">
+  <div class="body">
+    <div class="dtitle" id="dTitle"></div>
+    <div class="dmeta" id="dMeta"></div>
+    <div class="dext" id="dExt"></div>
+    <div class="dact">
+      <button class="tg" id="dExpand">Bloom from here</button>
+      <a id="dWiki" target="_blank" rel="noopener"><button class="tg ctl-full">Read on Wikipedia</button></a>
+    </div>
+  </div>
+</div>
+
+<div class="ui panel" id="ribbon" style="display:none">
+  <div class="r"><div class="n" id="rNodes">0</div><div class="c">articles</div></div>
+  <div class="r"><div class="n" id="rEdges">0</div><div class="c">links</div></div>
+  <div class="r"><div class="n" id="rDepth">0</div><div class="c">depth</div></div>
+</div>
+
+<div id="tip"></div>
+<div class="toast" id="toast"></div>
+<div class="hint" id="hint" style="display:none">double-click a star to bloom deeper · or turn on auto-bloom · drag to pan · scroll to zoom</div>
+
+<script>
+const API='https://en.wikipedia.org/w/api.php';
+const REST='https://en.wikipedia.org/api/rest_v1';
+
+// ---------- canvases ----------
+const gC=document.getElementById('graph'), g=gC.getContext('2d');
+const sC=document.getElementById('stars-bg'), s=sC.getContext('2d');
+let Wpx,Hpx,DPR=Math.min(devicePixelRatio||1,2);
+let bgStars=[];
+function resize(){
+  Wpx=innerWidth;Hpx=innerHeight;
+  [gC,sC].forEach(c=>{c.width=Wpx*DPR;c.height=Hpx*DPR;c.style.width=Wpx+'px';c.style.height=Hpx+'px';});
+  g.setTransform(DPR,0,0,DPR,0,0); s.setTransform(DPR,0,0,DPR,0,0);
+  bgStars=[];
+  for(let i=0;i<220;i++)bgStars.push({x:Math.random()*Wpx,y:Math.random()*Hpx,r:Math.random()*1.3+0.2,a:Math.random()*0.6+0.1,tw:Math.random()*6.28});
+  drawBg();
+}
+function drawBg(){
+  s.clearRect(0,0,Wpx,Hpx);
+  const grd=s.createRadialGradient(Wpx*0.5,Hpx*0.45,60,Wpx*0.5,Hpx*0.5,Math.max(Wpx,Hpx)*0.8);
+  grd.addColorStop(0,'#0b0f24');grd.addColorStop(1,'#05060e');
+  s.fillStyle=grd;s.fillRect(0,0,Wpx,Hpx);
+  const t=performance.now()/1000;
+  for(const st of bgStars){
+    const a=st.a*(0.6+0.4*Math.sin(t+st.tw));
+    s.globalAlpha=a;s.fillStyle='#cdd8ff';
+    s.beginPath();s.arc(st.x,st.y,st.r,0,6.28);s.fill();
+  }
+  s.globalAlpha=1;
+}
+addEventListener('resize',()=>{resize();});
+resize();
+setInterval(drawBg,120); // gentle twinkle
+
+// ---------- graph model ----------
+let nodes=[], edges=[], byTitle=new Map();
+let view={x:0,y:0,scale:1}, target={x:0,y:0,scale:1};
+let autoBloom=false, showLabels=true;
+let bloomQueue=[]; // titles waiting to expand
+let originTitle='';
+let hoverNode=null, selectedNode=null;
+let fetching=new Set();
+
+function depthColor(d){
+  // starlight: bright blue-white up close → dim, cool slate-blue as it recedes
+  const stops=[
+    [235,244,255],   // origin — near-white, faint blue
+    [198,222,255],   // bright blue-white
+    [150,186,246],   // soft blue
+    [108,142,210],   // dimmer
+    [78,104,168],    // distant
+    [58,78,130],     // faintest
+  ];
+  const i=Math.min(stops.length-1,d);
+  const c=stops[i];
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function addNode(title, depth, fromNode){
+  let n=byTitle.get(title);
+  if(n){ n.depth=Math.min(n.depth,depth); return n; }
+  // emerge from very close to the parent, then glide outward — no springy fling
+  const ang=Math.random()*6.28, rad=fromNode? 8+Math.random()*10 : 0;
+  n={ title, depth,
+      x:(fromNode?fromNode.x:0)+Math.cos(ang)*rad,
+      y:(fromNode?fromNode.y:0)+Math.sin(ang)*rad,
+      vx:0,vy:0, r: depth===0?13: Math.max(3.5, 9-depth*1.4),
+      born:performance.now(), deg:0, expanded:false, ext:null, thumb:undefined };
+  nodes.push(n); byTitle.set(title,n);
+  return n;
+}
+function addEdge(a,b,weight){
+  if(a===b)return;
+  const key=a.title<b.title? a.title+'|'+b.title : b.title+'|'+a.title;
+  let e=edges.find(e=>e.key===key);
+  if(e){ e.w=Math.max(e.w,weight); return; }
+  // 'src' is the star the connection reaches OUT from; 'dst' is the newly found one.
+  // The light stream waits ~450ms so the new star can fade in FIRST, then reaches across.
+  edges.push({a,b,src:a,dst:b,w:weight,key,born:performance.now(),delay:450});
+  a.deg++; b.deg++;
+}
+
+// ---------- Wikipedia fetches ----------
+async function jget(params){
+  const url=API+'?'+new URLSearchParams({format:'json',origin:'*',...params});
+  const r=await fetch(url); return r.json();
+}
+// get outgoing links + the article's lead extract (for a real prominence signal)
+async function fetchLinks(title){
+  const data=await jget({action:'query',titles:title,prop:'links|extracts',
+    pllimit:'200',plnamespace:'0',exintro:'1',explaintext:'1'});
+  const pages=data.query?.pages||{};
+  const page=Object.values(pages)[0];
+  if(!page||page.missing!==undefined) return {links:[],lead:''};
+  const links=(page.links||[]).map(l=>l.title);
+  const lead=(page.extract||'').toLowerCase();
+  return {links, lead};
+}
+// extract + thumbnail for detail card
+async function fetchSummary(title){
+  try{
+    const r=await fetch(`${REST}/page/summary/${encodeURIComponent(title)}`);
+    if(!r.ok)return null;
+    const d=await r.json();
+    return { extract:d.extract||'', thumb:d.thumbnail?.source||null, canonical:d.content_urls?.desktop?.page||null };
+  }catch(e){return null;}
+}
+// search-as-you-type
+async function fetchSearch(term){
+  if(!term.trim())return [];
+  const data=await jget({action:'opensearch',search:term,limit:'6',namespace:'0'});
+  return data[1]||[];
+}
+
+// filter out non-topic link clutter
+function isJunk(t){
+  return /^(List of|Wikipedia:|Help:|Template:|Category:|Portal:|File:|ISBN|Doi|International Standard|Geographic coordinate|Digital object|Bibcode|PMID|PMC )/i.test(t)
+    || /\(disambiguation\)/i.test(t);
+}
+
+async function expand(node){
+  if(node.expanded || fetching.has(node.title)) return;
+  fetching.add(node.title);
+  toast(`reaching into "${node.title}"…`);
+  const {links:rawLinks, lead}=await fetchLinks(node.title);
+  let links=rawLinks.filter(t=>!isJunk(t));
+  // prominence = does this topic appear in the article's lead paragraph?
+  // links named in the intro are what the article is "really about" → thicker edges, picked first.
+  const scored=links.map(t=>{
+    const pos = lead.indexOf(t.toLowerCase());
+    const inLead = pos>=0;
+    // earlier mention in the lead = stronger; links absent from lead get a small base score
+    const score = inLead ? 1 - Math.min(0.6, pos/Math.max(400,lead.length)) : 0.2 + Math.random()*0.12;
+    return {t, score, inLead};
+  }).sort((a,b)=>b.score-a.score);
+
+  const take=node.depth===0? 12 : (node.depth===1? 8 : 6);
+  // take the most prominent, plus 2 serendipitous picks from further down
+  const chosen=[];
+  for(let i=0;i<Math.min(take,scored.length);i++) chosen.push(scored[i]);
+  for(let k=0;k<2 && scored.length>take;k++){
+    const idx=take+Math.floor(Math.random()*(scored.length-take));
+    chosen.push(scored[idx]);
+  }
+  for(const {t,score} of chosen){
+    const child=addNode(t, node.depth+1, node);
+    addEdge(node, child, Math.max(0.18, score));   // score → edge weight (thickness)
+    if(autoBloom && node.depth+1 < 3) bloomQueue.push(child.title);
+  }
+  node.expanded=true;
+  fetching.delete(node.title);
+  hideToast();
+  updateRibbon();
+}
+
+// drive auto-bloom on a gentle cadence
+let lastBloom=0;
+function tickBloom(now){
+  if(!autoBloom) return;
+  if(now-lastBloom < 900) return;          // one expansion ~ every 0.9s
+  lastBloom=now;
+  // expand the shallowest un-expanded node near the queue front
+  while(bloomQueue.length){
+    const title=bloomQueue.shift();
+    const n=byTitle.get(title);
+    if(n && !n.expanded && nodes.length<140){ expand(n); break; }
+  }
+  if(nodes.length>=140) autoBloom=false, syncBloomBtn();
+}
+
+// ---------- force simulation ----------
+function simulate(){
+  const rep=2600, link=0.018, center=0.0006;
+  const now=performance.now();
+  for(const n of nodes){ n.vx*=0.80; n.vy*=0.80; }   // heavier damping → calmer settling
+  // repulsion (O(n^2) but capped node count)
+  for(let i=0;i<nodes.length;i++){
+    const a=nodes[i];
+    for(let j=i+1;j<nodes.length;j++){
+      const b=nodes[j];
+      let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy+0.01;
+      if(d2>90000) continue;
+      const f=rep/d2, d=Math.sqrt(d2);
+      const fx=dx/d*f, fy=dy/d*f;
+      a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;
+    }
+  }
+  // springs engage only after the light stream has reached across (delay + reach time),
+  // so a new star holds still while it fades in, then eases out to its constellation spot.
+  for(const e of edges){
+    const a=e.a,b=e.b;
+    let dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1;
+    const rest=70 + (1-e.w)*70;        // weak links sit farther out
+    const settle=Math.max(0, Math.min(1,(now-e.born-(e.delay||0)-300)/1400));
+    const f=(d-rest)*link*(0.5+e.w)*settle;
+    const fx=dx/d*f, fy=dy/d*f;
+    a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;
+  }
+  // mild gravity to origin
+  for(const n of nodes){
+    if(n===dragNode) continue;
+    n.vx-=n.x*center; n.vy-=n.y*center;
+    // cap speed so nothing ever jumps
+    const sp=Math.hypot(n.vx,n.vy), MAX=6;
+    if(sp>MAX){ n.vx=n.vx/sp*MAX; n.vy=n.vy/sp*MAX; }
+    n.x+=n.vx; n.y+=n.vy;
+  }
+}
+
+// ---------- rendering ----------
+function w2s(x,y){ return [ (x-view.x)*view.scale+Wpx/2, (y-view.y)*view.scale+Hpx/2 ]; }
+function s2w(sx,sy){ return [ (sx-Wpx/2)/view.scale+view.x, (sy-Hpx/2)/view.scale+view.y ]; }
+
+function draw(){
+  g.clearRect(0,0,Wpx,Hpx);
+  const now=performance.now();
+  // edges — the new star fades in first, THEN a stream of light reaches out to it
+  for(const e of edges){
+    const t=(now-e.born-(e.delay||0))/850;   // reach starts only after the delay
+    const reach=Math.max(0, Math.min(1, t));
+    const eased=reach<1 ? (1-Math.pow(1-reach,3)) : 1;   // ease-out: fast then gentle arrival
+    const [sx,sy]=w2s(e.src.x,e.src.y), [dx2,dy2]=w2s(e.dst.x,e.dst.y);
+    const lit = (hoverNode&&(e.a===hoverNode||e.b===hoverNode)) || (selectedNode&&(e.a===selectedNode||e.b===selectedNode));
+
+    // settled constellation line — faint, cool, thickness = relevance (e.w)
+    const baseAlpha = 0.09+e.w*0.26;
+    g.strokeStyle = lit? 'rgba(190,222,255,0.6)' : `rgba(150,184,246,${baseAlpha})`;
+    g.lineWidth = (0.5+e.w*3.0)*view.scale;     // relevance drives thickness
+
+    // draw the line only as far as the light has reached
+    const tipx=sx+(dx2-sx)*eased, tipy=sy+(dy2-sy)*eased;
+    if(eased>0){ g.beginPath(); g.moveTo(sx,sy); g.lineTo(tipx,tipy); g.stroke(); }
+
+    if(reach>0 && reach<1){
+      // a bright blue-white pulse traveling along the line toward the new star
+      const gr=g.createRadialGradient(tipx,tipy,0,tipx,tipy,10*view.scale+2);
+      gr.addColorStop(0,'rgba(245,250,255,0.95)');
+      gr.addColorStop(0.4,'rgba(190,222,255,0.55)');
+      gr.addColorStop(1,'rgba(150,184,246,0)');
+      g.fillStyle=gr;
+      g.beginPath(); g.arc(tipx,tipy,10*view.scale+2,0,6.28); g.fill();
+      // a short bright trail just behind the tip, thickness scaled by relevance
+      const trailStart=Math.max(0,eased-0.18);
+      const tx=sx+(dx2-sx)*trailStart, ty=sy+(dy2-sy)*trailStart;
+      g.strokeStyle='rgba(220,236,255,0.85)';
+      g.lineWidth=(1.2+e.w*3.0)*view.scale;
+      g.beginPath(); g.moveTo(tx,ty); g.lineTo(tipx,tipy); g.stroke();
+    }
+  }
+  // nodes
+  for(const n of nodes){
+    // the new star fades in FIRST (dim → bright) over ~0.45s, before its light reaches out
+    const age = n.depth===0 ? Math.min(1,(now-n.born)/500)
+                            : (()=>{ const r=Math.min(1,(now-n.born)/450); return r*r*(3-2*r); })();
+    const [x,y]=w2s(n.x,n.y);
+    const R=(n.r + Math.min(6,n.deg*0.5))*view.scale*(0.55+0.45*age);  // grows slightly as it brightens
+    const col=depthColor(n.depth);
+    const lit = n===hoverNode||n===selectedNode;
+    // glow
+    g.shadowColor=col; g.shadowBlur=(lit?26:14)*age;
+    g.fillStyle=col; g.globalAlpha=age;
+    g.beginPath();g.arc(x,y,R,0,6.28);g.fill();
+    g.shadowBlur=0;
+    // core
+    g.globalAlpha=age*0.9;
+    g.fillStyle='rgba(255,255,255,'+(lit?0.95:0.6)+')';
+    g.beginPath();g.arc(x,y,Math.max(1,R*0.32),0,6.28);g.fill();
+    g.globalAlpha=1;
+    // ring on selected
+    if(lit){ g.strokeStyle=col;g.lineWidth=1.5;g.beginPath();g.arc(x,y,R+5,0,6.28);g.stroke(); }
+    // label
+    if(showLabels && (view.scale>0.55 || n.depth<=1 || lit)){
+      const fs=Math.max(10, Math.min(16, (n.depth===0?15:12)*Math.min(1.4,view.scale)));
+      g.font=`${n.depth===0?500:400} ${fs}px Spectral, Georgia, serif`;
+      g.textAlign='center'; g.textBaseline='top';
+      g.globalAlpha=age*(lit?1:0.82);
+      g.fillStyle='rgba(8,10,22,0.85)';
+      const tw=g.measureText(n.title).width;
+      g.fillRect(x-tw/2-4,y+R+3,tw+8,fs+5);
+      g.fillStyle=lit?'#fff':'rgba(220,228,255,0.85)';
+      g.fillText(n.title, x, y+R+5);
+      g.globalAlpha=1;
+    }
+  }
+}
+
+// ---------- loop ----------
+function frame(now){
+  // ease view toward target
+  view.x+=(target.x-view.x)*0.08;
+  view.y+=(target.y-view.y)*0.08;
+  view.scale+=(target.scale-view.scale)*0.08;
+  for(let i=0;i<2;i++) simulate();
+  tickBloom(now);
+  draw();
+  requestAnimationFrame(frame);
+}
+
+// ---------- pick / hover ----------
+function nodeAt(sx,sy){
+  for(let i=nodes.length-1;i>=0;i--){
+    const n=nodes[i]; const [x,y]=w2s(n.x,n.y);
+    const R=(n.r+Math.min(6,n.deg*0.5))*view.scale+6;
+    if((sx-x)**2+(sy-y)**2 < R*R) return n;
+  }
+  return null;
+}
+
+// ---------- interaction ----------
+let dragging=false,dragNode=null,dragMoved=false,lastP=null;
+gC.addEventListener('pointerdown',e=>{
+  lastP={x:e.clientX,y:e.clientY}; dragMoved=false;
+  const n=nodeAt(e.clientX,e.clientY);
+  if(n){ dragNode=n; }
+  else { dragging=true; gC.classList.add('drag'); }
+});
+gC.addEventListener('pointermove',e=>{
+  const n=nodeAt(e.clientX,e.clientY);
+  const tip=document.getElementById('tip');
+  if(n && !dragNode && !dragging){ hoverNode=n; tip.textContent=n.title; tip.classList.add('show');
+    tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px'; gC.style.cursor='pointer'; }
+  else if(!dragging){ if(!dragNode){hoverNode=null;} tip.classList.remove('show'); gC.style.cursor=dragNode?'grabbing':'grab'; }
+  if(lastP){
+    const dx=e.clientX-lastP.x, dy=e.clientY-lastP.y;
+    if(Math.abs(dx)+Math.abs(dy)>3) dragMoved=true;
+    if(dragNode){ const [wx,wy]=s2w(e.clientX,e.clientY); dragNode.x=wx;dragNode.y=wy;dragNode.vx=0;dragNode.vy=0; }
+    else if(dragging){ target.x-=dx/view.scale; target.y-=dy/view.scale; view.x-=dx/view.scale; view.y-=dy/view.scale; }
+    lastP={x:e.clientX,y:e.clientY};
+  }
+});
+addEventListener('pointerup',e=>{
+  if(dragNode && !dragMoved) selectNode(dragNode);
+  dragNode=null; dragging=false; gC.classList.remove('drag'); lastP=null;
+});
+gC.addEventListener('dblclick',e=>{
+  const n=nodeAt(e.clientX,e.clientY); if(n){ expand(n); flyTo(n); }
+});
+gC.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const factor=Math.exp(-e.deltaY*0.0014);
+  target.scale=Math.max(0.25,Math.min(3.2,target.scale*factor));
+},{passive:false});
+
+function selectNode(n){
+  selectedNode=n;
+  const d=document.getElementById('detail');
+  document.getElementById('dTitle').textContent=n.title;
+  document.getElementById('dMeta').textContent=`depth ${n.depth} · ${n.deg} connections`;
+  document.getElementById('dWiki').href=`https://en.wikipedia.org/wiki/${encodeURIComponent(n.title)}`;
+  const ext=document.getElementById('dExt'), thumb=document.getElementById('dThumb');
+  ext.textContent='loading…'; thumb.style.display='none';
+  d.classList.add('show');
+  if(n.ext===null || n.ext===undefined){
+    fetchSummary(n.title).then(sm=>{
+      if(sm){ n.ext=sm.extract; n.thumb=sm.thumb; }
+      else { n.ext=''; }
+      if(selectedNode===n){
+        ext.textContent=n.ext||'No summary available.';
+        if(n.thumb){ thumb.src=n.thumb; thumb.style.display='block'; }
+      }
+    });
+  } else {
+    ext.textContent=n.ext||'No summary available.';
+    if(n.thumb){ thumb.src=n.thumb; thumb.style.display='block'; }
+  }
+}
+document.getElementById('dExpand').onclick=()=>{ if(selectedNode){ expand(selectedNode); flyTo(selectedNode);} };
+
+function flyTo(n){ target.x=n.x; target.y=n.y; target.scale=Math.max(target.scale,0.9); }
+function recenter(){
+  if(!nodes.length)return;
+  let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+  for(const n of nodes){minx=Math.min(minx,n.x);miny=Math.min(miny,n.y);maxx=Math.max(maxx,n.x);maxy=Math.max(maxy,n.y);}
+  target.x=(minx+maxx)/2; target.y=(miny+maxy)/2;
+  const span=Math.max(maxx-minx,maxy-miny)+200;
+  target.scale=Math.max(0.3,Math.min(1.4,Math.min(Wpx,Hpx)/span));
+}
+
+// ---------- ribbon / toast ----------
+function updateRibbon(){
+  document.getElementById('rNodes').textContent=nodes.length;
+  document.getElementById('rEdges').textContent=edges.length;
+  let md=0; for(const n of nodes) md=Math.max(md,n.depth);
+  document.getElementById('rDepth').textContent=md;
+}
+let toastTimer=null;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); }
+function hideToast(){ const t=document.getElementById('toast'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),500); }
+
+// ---------- controls ----------
+const bloomBtn=document.getElementById('bloomBtn'), labelBtn=document.getElementById('labelBtn');
+function syncBloomBtn(){ bloomBtn.classList.toggle('on',autoBloom); bloomBtn.textContent=autoBloom?'On':'Off'; }
+bloomBtn.onclick=()=>{ autoBloom=!autoBloom; syncBloomBtn();
+  if(autoBloom){ // refill queue with shallow unexpanded nodes
+    nodes.filter(n=>!n.expanded&&n.depth<3).sort((a,b)=>a.depth-b.depth).forEach(n=>bloomQueue.push(n.title)); } };
+labelBtn.onclick=()=>{ showLabels=!showLabels; labelBtn.classList.toggle('on',showLabels); labelBtn.textContent=showLabels?'Show':'Hide'; };
+document.getElementById('recenter').onclick=recenter;
+document.getElementById('restart').onclick=()=>location.reload();
+
+// ---------- launch ----------
+const launch=document.getElementById('launch'), qInput=document.getElementById('q'),
+      suggest=document.getElementById('suggest');
+let sugItems=[], sugActive=-1, sugTimer=null;
+qInput.addEventListener('input',()=>{
+  clearTimeout(sugTimer);
+  sugTimer=setTimeout(async()=>{
+    const res=await fetchSearch(qInput.value);
+    sugItems=res; sugActive=-1;
+    if(!res.length){ suggest.classList.remove('show'); return; }
+    suggest.innerHTML=res.map((r,i)=>`<div class="s" data-i="${i}">${r}</div>`).join('');
+    suggest.classList.add('show');
+    suggest.querySelectorAll('.s').forEach(el=>el.onclick=()=>begin(res[+el.dataset.i]));
+  },180);
+});
+qInput.addEventListener('keydown',e=>{
+  if(!suggest.classList.contains('show')){ if(e.key==='Enter'&&qInput.value.trim()) begin(qInput.value.trim()); return; }
+  if(e.key==='ArrowDown'){ e.preventDefault(); sugActive=Math.min(sugItems.length-1,sugActive+1); paintSug(); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); sugActive=Math.max(0,sugActive-1); paintSug(); }
+  else if(e.key==='Enter'){ e.preventDefault(); begin(sugActive>=0?sugItems[sugActive]:qInput.value.trim()); }
+});
+function paintSug(){ suggest.querySelectorAll('.s').forEach((el,i)=>el.classList.toggle('act',i===sugActive)); }
+document.getElementById('go').onclick=()=>{ if(qInput.value.trim()) begin(qInput.value.trim()); };
+document.querySelectorAll('.seeds span').forEach(sp=>sp.onclick=()=>begin(sp.dataset.seed));
+
+async function begin(title){
+  // normalize via search to get canonical title
+  toast('opening the rabbit hole…');
+  let canonical=title;
+  try{ const res=await fetchSearch(title); if(res.length) canonical=res[0]; }catch(e){}
+  originTitle=canonical;
+  launch.classList.add('gone');
+  ['header','controls','ribbon'].forEach(id=>document.getElementById(id).style.display='');
+  document.getElementById('originLbl').innerHTML='fell into <b>'+canonical+'</b>';
+  const hint=document.getElementById('hint'); hint.style.display=''; setTimeout(()=>hint.style.opacity=0,6000);
+  const root=addNode(canonical,0,null);
+  updateRibbon();
+  await expand(root);
+  recenter();
+  setTimeout(recenter,600);
+}
+
+syncBloomBtn();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
