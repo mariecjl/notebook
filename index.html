@@ -98,6 +98,7 @@
   .preview, .scribbles{display:block;width:100%;height:112px;margin-top:8px;
     background-image:linear-gradient(var(--rule) 1px,transparent 1px),linear-gradient(90deg,var(--rule) 1px,transparent 1px);
     background-size:10px 10px;background-color:rgba(255,255,255,.28)}
+  .preview{object-fit:cover}
   .scribbles{position:relative;overflow:hidden}
   .scribble{position:absolute;height:2px;width:20px;background:var(--graphite);opacity:.32;border-radius:2px}
 
@@ -201,7 +202,8 @@ const projects = [
     desc:'Drop in on one Wikipedia article and watch everything it touches bloom outward into a living constellation, built from real article data as you go.',
     tags:['wikipedia','live data','node graph'],
     href:'wander.html', // <-- point this at wherever you host the file
-    accent:'#ffd27a'
+    accent:'#ffd27a',
+    thumb:'wander.gif' // <-- path/URL to your gif. Delete this line to fall back to the animated doodle.
   },
   { live:false, entry:'02' },
   { live:false, entry:'03' },
@@ -215,7 +217,9 @@ grid.innerHTML = projects.map(p=>{
     return `
     <a class="card" style="--tilt:${tilt}deg" href="${p.href}">
       <div class="card-top"><span class="cat">N&deg;${p.entry}</span><span class="stamp penned">penned</span></div>
-      <canvas class="preview" data-accent="${p.accent}"></canvas>
+      ${p.thumb
+        ? `<img class="preview" src="${p.thumb}" alt="${p.title} preview" loading="lazy">`
+        : `<canvas class="preview" data-accent="${p.accent}"></canvas>`}
       <div class="card-body">
         <h3>${p.title}</h3>
         <p class="tagline">${p.tagline}</p>
@@ -241,7 +245,7 @@ grid.innerHTML = projects.map(p=>{
 }).join('');
 
 /* ---------- tiny animated doodle preview on each written page ---------- */
-document.querySelectorAll('.preview').forEach(canvas=>{
+document.querySelectorAll('canvas.preview').forEach(canvas=>{
   const ctx = canvas.getContext('2d');
   const accent = canvas.dataset.accent || '#bf831c';
 
